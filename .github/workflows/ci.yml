@@ -5,9 +5,11 @@ on:
   push:
     branches:
       - 'develop'
+      - 'exp'
   pull_request:
     branches:
       - 'develop'
+      - 'exp'
 
 concurrency:
   # Cancel in-progress jobs for the same pull request
