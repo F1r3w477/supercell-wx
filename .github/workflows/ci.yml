@@ -163,6 +163,20 @@ jobs:
         path: source
         submodules: recursive
 
+    - name: Setup sccache
+      if: ${{ startsWith(matrix.os, 'ubuntu') || startsWith(matrix.os, 'windows') }}
+      uses: mozilla-actions/sccache-action@v0.0.9
+
+    - name: Cache sccache Data
+      if: ${{ startsWith(matrix.os, 'ubuntu') || startsWith(matrix.os, 'windows') }}
+      uses: actions/cache@v5
+      with:
+        path: ${{ startsWith(matrix.os, 'windows') && '~\\AppData\\Local\\Mozilla\\sccache' || '~/.cache/sccache' }}
+        key: sccache-v1-${{ matrix.name }}-${{ github.ref_name }}-${{ github.sha }}
+        restore-keys: |
+          sccache-v1-${{ matrix.name }}-${{ github.ref_name }}-
+          sccache-v1-${{ matrix.name }}-
+
     - name: Install Qt
       uses: jdpurcell/install-qt-action@v5
       env:
@@ -263,14 +277,31 @@ jobs:
       shell: pwsh
       run: |
         cd build
-        cmake ../source/ `
-          -G Ninja `
-          -DCMAKE_BUILD_TYPE="${{ matrix.build_type }}" `
-          -DCMAKE_PROJECT_TOP_LEVEL_INCLUDES="${{ github.workspace }}/source/external/cmake-conan/conan_provider.cmake" `
-          -DCMAKE_INSTALL_PREFIX="${{ github.workspace }}/supercell-wx" `
-          -DCONAN_HOST_PROFILE="${{ matrix.conan_profile }}" `
-          -DCONAN_BUILD_PROFILE="${{ matrix.conan_profile }}"
+        $useSccache = "${{ startsWith(matrix.os, 'ubuntu') || startsWith(matrix.os, 'windows') }}" -eq "true"
+        if ($useSccache) {
+          sccache --start-server
+          cmake ../source/ `
+            -G Ninja `
+            -DCMAKE_BUILD_TYPE="${{ matrix.build_type }}" `
+            -DCMAKE_PROJECT_TOP_LEVEL_INCLUDES="${{ github.workspace }}/source/external/cmake-conan/conan_provider.cmake" `
+            -DCMAKE_INSTALL_PREFIX="${{ github.workspace }}/supercell-wx" `
+            -DCONAN_HOST_PROFILE="${{ matrix.conan_profile }}" `
+            -DCONAN_BUILD_PROFILE="${{ matrix.conan_profile }}" `
+            -DCMAKE_C_COMPILER_LAUNCHER=sccache `
+            -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
+        } else {
+          cmake ../source/ `
+            -G Ninja `
+            -DCMAKE_BUILD_TYPE="${{ matrix.build_type }}" `
+            -DCMAKE_PROJECT_TOP_LEVEL_INCLUDES="${{ github.workspace }}/source/external/cmake-conan/conan_provider.cmake" `
+            -DCMAKE_INSTALL_PREFIX="${{ github.workspace }}/supercell-wx" `
+            -DCONAN_HOST_PROFILE="${{ matrix.conan_profile }}" `
+            -DCONAN_BUILD_PROFILE="${{ matrix.conan_profile }}"
+        }
         ninja supercell-wx wxtest
+        if ($useSccache) {
+          sccache --show-stats
+        }
 
     - name: Separate Debug Symbols (Linux)
       if: ${{ startsWith(matrix.os, 'ubuntu') && env.SCWX_FAST_CI != 'true' }}
