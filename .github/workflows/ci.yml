@@ -318,6 +318,7 @@ jobs:
         objcopy --strip-debug --strip-unneeded libQMapLibre.so
 
     - name: Install Supercell Wx
+      if: ${{ !startsWith(matrix.os, 'windows') || env.SCWX_FAST_CI != 'true' }}
       shell: pwsh
       run: |
         cd build
