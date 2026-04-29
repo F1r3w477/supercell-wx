@@ -391,9 +391,23 @@ jobs:
         New-Item -ItemType Directory -Path "Release/lib" -Force | Out-Null
 
         if (-not (Test-Path "Release/bin/supercell-wx.exe")) {
-          $exePath = Get-ChildItem -Path . -Recurse -Filter "supercell-wx.exe" -File |
-            Where-Object { $_.FullName -notlike "*\Release\bin\*" } |
-            Select-Object -First 1
+          $candidateExePaths = @(
+            "scwx-qt/Release/bin/supercell-wx.exe",
+            "scwx-qt/bin/supercell-wx.exe",
+            "Release/bin/supercell-wx.exe",
+            "bin/supercell-wx.exe"
+          )
+          $exePath = $null
+          foreach ($candidatePath in $candidateExePaths) {
+            if (Test-Path $candidatePath) {
+              $exePath = Get-Item $candidatePath
+              break
+            }
+          }
+          if ($null -eq $exePath) {
+            $exePath = Get-ChildItem -Path . -Recurse -Filter "supercell-wx.exe" -File |
+              Select-Object -First 1
+          }
           if ($null -eq $exePath) {
             throw "Unable to locate supercell-wx.exe in build tree"
           }
