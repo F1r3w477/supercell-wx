@@ -276,6 +276,7 @@ jobs:
     - name: Build Supercell Wx
       shell: pwsh
       run: |
+        $ErrorActionPreference = "Stop"
         cd build
         $useSccache = "${{ startsWith(matrix.os, 'ubuntu') || startsWith(matrix.os, 'windows') }}" -eq "true"
         if ($useSccache) {
@@ -291,6 +292,7 @@ jobs:
             -DCONAN_BUILD_PROFILE="${{ matrix.conan_profile }}" `
             -DCMAKE_C_COMPILER_LAUNCHER=sccache `
             -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
         } else {
           cmake ../source/ `
             -G Ninja `
@@ -301,10 +303,13 @@ jobs:
             -DCMAKE_LIBRARY_OUTPUT_DIRECTORY_RELEASE="${{ github.workspace }}/build/Release/lib" `
             -DCONAN_HOST_PROFILE="${{ matrix.conan_profile }}" `
             -DCONAN_BUILD_PROFILE="${{ matrix.conan_profile }}"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
         }
         ninja supercell-wx wxtest
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
         if ($useSccache) {
           sccache --show-stats
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
         }
 
     - name: Separate Debug Symbols (Linux)
