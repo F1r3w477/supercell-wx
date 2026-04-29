@@ -383,12 +383,20 @@ jobs:
       shell: pwsh
       run: |
         cd build
-        if (-not (Test-Path "Release/bin") -and (Test-Path "bin")) {
-          New-Item -ItemType Directory -Path "Release/bin" -Force | Out-Null
-          Copy-Item -Path "bin/*" -Destination "Release/bin/" -Recurse -Force
+        New-Item -ItemType Directory -Path "Release/bin" -Force | Out-Null
+        New-Item -ItemType Directory -Path "Release/lib" -Force | Out-Null
+
+        if (-not (Test-Path "Release/bin/supercell-wx.exe")) {
+          $exePath = Get-ChildItem -Path . -Recurse -Filter "supercell-wx.exe" -File |
+            Where-Object { $_.FullName -notlike "*\Release\bin\*" } |
+            Select-Object -First 1
+          if ($null -eq $exePath) {
+            throw "Unable to locate supercell-wx.exe in build tree"
+          }
+          Copy-Item -Path $exePath.FullName -Destination "Release/bin/supercell-wx.exe" -Force
         }
-        if (-not (Test-Path "Release/lib") -and (Test-Path "lib")) {
-          New-Item -ItemType Directory -Path "Release/lib" -Force | Out-Null
+
+        if ((Test-Path "lib") -and ((Get-ChildItem -Path "Release/lib" -ErrorAction SilentlyContinue | Measure-Object).Count -eq 0)) {
           Copy-Item -Path "lib/*" -Destination "Release/lib/" -Recurse -Force
         }
         cpack
