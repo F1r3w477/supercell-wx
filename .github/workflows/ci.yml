@@ -18,6 +18,7 @@ concurrency:
 
 jobs:
   build:
+    if: ${{ !(((github.event_name == 'pull_request' && github.base_ref == 'exp') || (github.event_name != 'pull_request' && github.ref_name == 'exp'))) || matrix.run_on_exp }}
     strategy:
       fail-fast: false
       matrix:
@@ -25,6 +26,7 @@ jobs:
           - name: windows_vs2022_x64
             os: windows-2022
             build_type: Release
+            run_on_exp: false
             env_cc: ''
             env_cxx: ''
             compiler: msvc
@@ -44,6 +46,7 @@ jobs:
           - name: windows_vs2026_x64
             os: windows-2025-vs2026
             build_type: Release
+            run_on_exp: true
             env_cc: ''
             env_cxx: ''
             compiler: msvc
@@ -63,6 +66,7 @@ jobs:
           - name: linux_gcc-13_x64
             os: ubuntu-24.04
             build_type: Release
+            run_on_exp: true
             env_cc: gcc-13
             env_cxx: g++-13
             compiler: gcc
@@ -81,6 +85,7 @@ jobs:
           - name: linux_clang-18_x64
             os: ubuntu-24.04
             build_type: Release
+            run_on_exp: false
             env_cc: clang-18
             env_cxx: clang++-18
             compiler: clang
@@ -99,6 +104,7 @@ jobs:
           - name: linux_gcc-13_arm64
             os: ubuntu-24.04-arm
             build_type: Release
+            run_on_exp: false
             env_cc: gcc-13
             env_cxx: g++-13
             compiler: gcc
@@ -117,6 +123,7 @@ jobs:
           - name: macos_clang-18_x64
             os: macos-15-intel
             build_type: Release
+            run_on_exp: false
             env_cc: clang
             env_cxx: clang++
             compiler: clang
@@ -132,6 +139,7 @@ jobs:
           - name: macos_clang-18_arm64
             os: macos-14
             build_type: Release
+            run_on_exp: false
             env_cc: clang
             env_cxx: clang++
             compiler: clang
@@ -149,6 +157,7 @@ jobs:
       CC: ${{ matrix.env_cc }}
       CXX: ${{ matrix.env_cxx }}
       SCWX_VERSION: v0.5.6
+      SCWX_FAST_CI: ${{ (github.event_name == 'pull_request' && github.base_ref == 'exp') || (github.event_name != 'pull_request' && github.ref_name == 'exp') }}
     runs-on: ${{ matrix.os }}
 
     steps:
@@ -271,7 +280,7 @@ jobs:
         ninja supercell-wx wxtest
 
     - name: Separate Debug Symbols (Linux)
-      if: ${{ startsWith(matrix.os, 'ubuntu') }}
+      if: ${{ startsWith(matrix.os, 'ubuntu') && env.SCWX_FAST_CI != 'true' }}
       shell: bash
       run: |
         cd build/
@@ -315,28 +324,28 @@ jobs:
         tar -czf supercell-wx-${{ matrix.artifact_suffix }}.tar.gz supercell-wx/
 
     - name: Upload Artifacts (Windows)
-      if: ${{ startsWith(matrix.os, 'windows') }}
+      if: ${{ startsWith(matrix.os, 'windows') && env.SCWX_FAST_CI != 'true' }}
       uses: actions/upload-artifact@v7
       with:
         name: supercell-wx-${{ matrix.artifact_suffix }}
         path: ${{ github.workspace }}/supercell-wx/
 
     - name: Upload Debug Artifacts (Windows)
-      if: ${{ startsWith(matrix.os, 'windows') }}
+      if: ${{ startsWith(matrix.os, 'windows') && env.SCWX_FAST_CI != 'true' }}
       uses: actions/upload-artifact@v7
       with:
         name: supercell-wx-debug-${{ matrix.artifact_suffix }}
         path: ${{ github.workspace }}/build/Release/bin/*.pdb
 
     - name: Upload Artifacts (Linux)
-      if: ${{ startsWith(matrix.os, 'ubuntu') }}
+      if: ${{ startsWith(matrix.os, 'ubuntu') && env.SCWX_FAST_CI != 'true' }}
       uses: actions/upload-artifact@v7
       with:
         name: supercell-wx-${{ matrix.artifact_suffix }}
         path: ${{ github.workspace }}/supercell-wx-${{ matrix.artifact_suffix }}.tar.gz
 
     - name: Upload Debug Artifacts (Linux)
-      if: ${{ startsWith(matrix.os, 'ubuntu') }}
+      if: ${{ startsWith(matrix.os, 'ubuntu') && env.SCWX_FAST_CI != 'true' }}
       uses: actions/upload-artifact@v7
       with:
         name: supercell-wx-debug-${{ matrix.artifact_suffix }}
@@ -392,7 +401,7 @@ jobs:
         path: ${{ github.workspace }}/*-${{ matrix.appimage_arch }}.AppImage*
 
     - name: Build FlatPak (Linux)
-      if: ${{ startsWith(matrix.os, 'ubuntu') }}
+      if: ${{ startsWith(matrix.os, 'ubuntu') && env.SCWX_FAST_CI != 'true' }}
       env:
         INSTALL_DIR: ${{ github.workspace }}/supercell-wx/
         FLATPAK_DIR: ${{ github.workspace }}/supercell-wx-flatpak/
@@ -420,21 +429,21 @@ jobs:
         flatpak build-bundle flatpak-repo supercell-wx.flatpak net.supercellwx.app
 
     - name: Upload FlatPak (Linux)
-      if: ${{ startsWith(matrix.os, 'ubuntu') }}
+      if: ${{ startsWith(matrix.os, 'ubuntu') && env.SCWX_FAST_CI != 'true' }}
       uses: actions/upload-artifact@v7
       with:
         name: supercell-wx-flatpak-${{ matrix.artifact_suffix }}
         path: ${{ github.workspace }}/supercell-wx.flatpak
 
     - name: Build Disk Image (macOS)
-      if: ${{ startsWith(matrix.os, 'macos') }}
+      if: ${{ startsWith(matrix.os, 'macos') && env.SCWX_FAST_CI != 'true' }}
       shell: pwsh
       run: |
         cd build
         cpack
 
     - name: Upload Disk Image (macOS)
-      if: ${{ startsWith(matrix.os, 'macos') }}
+      if: ${{ startsWith(matrix.os, 'macos') && env.SCWX_FAST_CI != 'true' }}
       uses: actions/upload-artifact@v7
       with:
         name: supercell-wx-${{ matrix.artifact_suffix }}
