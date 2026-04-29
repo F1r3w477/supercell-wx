@@ -383,6 +383,14 @@ jobs:
       shell: pwsh
       run: |
         cd build
+        if (-not (Test-Path "Release/bin") -and (Test-Path "bin")) {
+          New-Item -ItemType Directory -Path "Release/bin" -Force | Out-Null
+          Copy-Item -Path "bin/*" -Destination "Release/bin/" -Recurse -Force
+        }
+        if (-not (Test-Path "Release/lib") -and (Test-Path "lib")) {
+          New-Item -ItemType Directory -Path "Release/lib" -Force | Out-Null
+          Copy-Item -Path "lib/*" -Destination "Release/lib/" -Recurse -Force
+        }
         cpack
 
     - name: Upload Installer (Windows)
