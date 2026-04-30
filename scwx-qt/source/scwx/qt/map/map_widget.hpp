@@ -36,6 +36,7 @@ class GlContext;
 namespace scwx::qt::map
 {
 
+class MapAnnotationLayer;
 class MapWidgetImpl;
 
 class MapWidget : public QOpenGLWidget
@@ -55,9 +56,11 @@ public:
    [[nodiscard]] const scwx::util::time_zone* GetDefaultTimeZone() const;
    [[nodiscard]] std::optional<float>         GetElevation() const;
    [[nodiscard]] std::vector<float>           GetElevationCuts() const;
-   [[nodiscard]] std::optional<float>      GetIncomingLevel2Elevation() const;
-   [[nodiscard]] std::vector<std::string>  GetLevel3Products();
-   [[nodiscard]] std::string               GetMapStyle() const;
+   [[nodiscard]] std::optional<float>     GetIncomingLevel2Elevation() const;
+   [[nodiscard]] std::vector<std::string> GetLevel3Products();
+   [[nodiscard]] std::string              GetMapStyle() const;
+   [[nodiscard]] std::shared_ptr<MapAnnotationLayer>
+                                           map_annotation_layer() const;
    [[nodiscard]] common::RadarProductGroup GetRadarProductGroup() const;
    [[nodiscard]] std::string               GetRadarProductName() const;
    [[nodiscard]] std::shared_ptr<config::RadarSite> GetRadarSite() const;
@@ -219,6 +222,12 @@ signals:
 
    void WidgetPainted();
    void IncomingLevel2ElevationChanged(std::optional<float> incomingElevation);
+
+   /**
+    * Emitted after custom map layers (including map annotations) are attached
+    * following a style load or layer rebuild.
+    */
+   void MapAnnotationLayerReady();
    void MapPaneContextMenuRequested(const QPoint& globalPos);
 };
 
