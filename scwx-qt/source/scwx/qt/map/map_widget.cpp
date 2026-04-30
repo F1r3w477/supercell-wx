@@ -1598,7 +1598,6 @@ void MapWidgetImpl::AddLayers()
       }
    }
 
-<<<<<<< HEAD
    // Color table layer is omitted when there is no radar product view, but
    // map context can still hold bottom margin from a previous site; clear it.
    static const std::string kColorTableLayerId = types::GetLayerName(
@@ -1607,7 +1606,6 @@ void MapWidgetImpl::AddLayers()
    {
       context_->set_color_table_margins({});
    }
-=======
    if (annotationLayer_ == nullptr)
    {
       annotationLayer_ = std::make_shared<MapAnnotationLayer>(glContext_);
@@ -1621,7 +1619,6 @@ void MapWidgetImpl::AddLayers()
    UpdateAnnotationCursor();
 
    Q_EMIT widget_->MapAnnotationLayerReady();
->>>>>>> origin/exp
 }
 
 void MapWidgetImpl::AddLayer(types::LayerType        type,
