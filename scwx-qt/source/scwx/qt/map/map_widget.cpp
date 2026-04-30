@@ -19,6 +19,7 @@
 #include <scwx/qt/map/radar_site_layer.hpp>
 #include <scwx/qt/model/imgui_context_model.hpp>
 #include <scwx/qt/model/layer_model.hpp>
+#include <scwx/qt/types/layer_types.hpp>
 #include <scwx/qt/settings/general_settings.hpp>
 #include <scwx/qt/settings/map_settings.hpp>
 #include <scwx/qt/settings/palette_settings.hpp>
@@ -844,7 +845,9 @@ std::vector<float> MapWidget::GetElevationCuts() const
 
 std::optional<float> MapWidget::GetIncomingLevel2Elevation() const
 {
-   return p->radarProductManager_->incoming_level_2_elevation();
+   return p->radarProductManager_ != nullptr ?
+             p->radarProductManager_->incoming_level_2_elevation() :
+             std::optional<float> {};
 }
 
 common::Level2Product
@@ -1042,7 +1045,9 @@ void MapWidget::SetColorTableThreshold(std::optional<float> threshold)
 
 const scwx::util::time_zone* MapWidget::GetDefaultTimeZone() const
 {
-   return p->radarProductManager_->default_time_zone();
+   return p->radarProductManager_ != nullptr ?
+             p->radarProductManager_->default_time_zone() :
+             scwx::util::time::current_time_zone();
 }
 
 void MapWidget::ScreenCapture(types::CaptureType captureType)
@@ -1098,6 +1103,16 @@ void MapWidget::SelectRadarProduct(common::RadarProductGroup group,
    else
    {
       p->currentTiltIndex_ = 0;
+   }
+
+   if (p->radarProductManager_ == nullptr)
+   {
+      p->context_->set_radar_product_group(group);
+      p->context_->set_radar_product(productName);
+      p->context_->set_radar_product_code(productCode);
+      p->RadarProductViewDisconnect();
+      p->context_->set_radar_product_view(nullptr);
+      return;
    }
 
    if (radarProductView == nullptr ||
@@ -1192,13 +1207,41 @@ void MapWidget::SelectRadarSite(const std::string& id, bool updateCoordinates)
 void MapWidget::SelectRadarSite(std::shared_ptr<config::RadarSite> radarSite,
                                 bool updateCoordinates)
 {
+   const std::shared_ptr<config::RadarSite> currentRadarSite = GetRadarSite();
+   auto radarProductView = p->context_->radar_product_view();
+
+   if (radarSite == nullptr)
+   {
+      if (currentRadarSite == nullptr)
+      {
+         return;
+      }
+
+      if (p->autoRefreshEnabled_ && p->radarProductManager_ != nullptr &&
+          radarProductView != nullptr)
+      {
+         p->radarProductManager_->EnableRefresh(
+            radarProductView->GetRadarProductGroup(),
+            radarProductView->GetRadarProductName(),
+            false,
+            p->uuid_);
+      }
+
+      p->RadarProductViewDisconnect();
+      p->context_->set_radar_product_view(nullptr);
+      p->SetRadarSite("");
+      p->AddLayers();
+      p->Update();
+
+      Q_EMIT RadarSiteUpdated(nullptr);
+      return;
+   }
+
    // Verify radar site is valid and has changed
    if (radarSite != nullptr &&
        (p->radarProductManager_ == nullptr ||
         radarSite->id() != p->radarProductManager_->radar_site()->id()))
    {
-      auto radarProductView = p->context_->radar_product_view();
-
       // setCoordinate: map exists only after initializeGL/ResetMap; first fit
       // is applied from radarProductManager_ in ResetMap.
       if (updateCoordinates && p->map_ != nullptr)
@@ -1213,6 +1256,13 @@ void MapWidget::SelectRadarSite(std::shared_ptr<config::RadarSite> radarSite,
       if (radarProductView != nullptr)
       {
          radarProductView->set_radar_product_manager(p->radarProductManager_);
+      }
+      else if (p->context_->radar_product_group() !=
+               common::RadarProductGroup::Unknown)
+      {
+         SelectRadarProduct(p->context_->radar_product_group(),
+                            p->context_->radar_product(),
+                            p->context_->radar_product_code());
       }
 
       p->AddLayers();
@@ -1548,6 +1598,14 @@ void MapWidgetImpl::AddLayers()
       }
    }
 
+   // Color table layer is omitted when there is no radar product view, but
+   // map context can still hold bottom margin from a previous site; clear it.
+   static const std::string kColorTableLayerId = types::GetLayerName(
+      types::LayerType::Information, types::InformationLayer::ColorTable);
+   if (std::ranges::find(layerList_, kColorTableLayerId) == layerList_.cend())
+   {
+      context_->set_color_table_margins({});
+   }
    if (annotationLayer_ == nullptr)
    {
       annotationLayer_ = std::make_shared<MapAnnotationLayer>(glContext_);
@@ -1626,16 +1684,23 @@ void MapWidgetImpl::AddLayer(types::LayerType        type,
       case types::InformationLayer::RadarSite:
          radarSiteLayer_ = std::make_shared<RadarSiteLayer>(glContext_);
          AddLayer(layerName, radarSiteLayer_, before);
-         connect(
-            radarSiteLayer_.get(),
-            &RadarSiteLayer::RadarSiteSelected,
-            this,
-            [this](const std::string& id)
-            {
-               auto& generalSettings = settings::GeneralSettings::Instance();
-               widget_->RadarSiteRequested(
-                  id, generalSettings.center_on_radar_selection().GetValue());
-            });
+         connect(radarSiteLayer_.get(),
+                 &RadarSiteLayer::RadarSiteSelected,
+                 this,
+                 [this](const std::string& id)
+                 {
+                    auto& generalSettings =
+                       settings::GeneralSettings::Instance();
+                    auto selectedRadarSite = widget_->GetRadarSite();
+                    const std::string requestedRadarSite =
+                       (selectedRadarSite != nullptr &&
+                        selectedRadarSite->id() == id) ?
+                          std::string {} :
+                          id;
+                    widget_->RadarSiteRequested(
+                       requestedRadarSite,
+                       generalSettings.center_on_radar_selection().GetValue());
+                 });
          break;
 
       // Create the location marker layer
@@ -1664,7 +1729,8 @@ void MapWidgetImpl::AddLayer(types::LayerType        type,
 
       // If there is a radar product view, create the radar range layer
       case types::DataLayer::RadarRange:
-         if (radarProductView != nullptr)
+         if (radarProductView != nullptr && radarProductManager_ != nullptr &&
+             radarProductManager_->radar_site() != nullptr)
          {
             std::shared_ptr<config::RadarSite> radarSite =
                radarProductManager_->radar_site();
@@ -2202,9 +2268,17 @@ void MapWidgetImpl::ResetMap(const std::string& styleName)
    else
    {
       const std::shared_ptr<config::RadarSite> radarSite =
-         radarProductManager_->radar_site();
-      map_->setCoordinateZoom({radarSite->latitude(), radarSite->longitude()},
-                              prevZoom_);
+         radarProductManager_ != nullptr ? radarProductManager_->radar_site() :
+                                           nullptr;
+      if (radarSite != nullptr)
+      {
+         map_->setCoordinateZoom(
+            {radarSite->latitude(), radarSite->longitude()}, prevZoom_);
+      }
+      else
+      {
+         map_->setCoordinateZoom({prevLatitude_, prevLongitude_}, prevZoom_);
+      }
    }
 
    // Update style
@@ -2694,9 +2768,11 @@ void MapWidgetImpl::RadarProductViewConnect()
          [=, this]()
          {
             std::shared_ptr<config::RadarSite> radarSite =
-               radarProductManager_->radar_site();
+               radarProductManager_ != nullptr ?
+                  radarProductManager_->radar_site() :
+                  nullptr;
 
-            if (map_ != nullptr)
+            if (map_ != nullptr && radarSite != nullptr)
             {
                RadarRangeLayer::Update(
                   map_,
@@ -2851,17 +2927,30 @@ void MapWidgetImpl::SetRadarSite(const std::string& radarSite,
    // Set the radar site in the context
    context_->set_radar_site(config::RadarSite::Get(radarSite));
 
+   const std::shared_ptr<config::RadarSite> currentRadarSite =
+      radarProductManager_ != nullptr ? radarProductManager_->radar_site() :
+                                        nullptr;
+
    // Check if radar site has changed
-   if (radarProductManager_ == nullptr ||
-       radarSite != radarProductManager_->radar_site()->id())
+   if ((currentRadarSite == nullptr && !radarSite.empty()) ||
+       (currentRadarSite != nullptr && radarSite != currentRadarSite->id()))
    {
       // Disconnect signals from old RadarProductManager
       RadarProductManagerDisconnect();
 
+      // Update views
+      if (radarSite.empty())
+      {
+         radarProductManager_.reset();
+         context_->overlay_product_view()->set_radar_product_manager(nullptr);
+         productAvailabilityCheckNeeded_     = false;
+         productAvailabilityUpdated_         = false;
+         productAvailabilityProductSelected_ = false;
+         return;
+      }
+
       // Set new RadarProductManager
       radarProductManager_ = manager::RadarProductManager::Instance(radarSite);
-
-      // Update views
       context_->overlay_product_view()->set_radar_product_manager(
          radarProductManager_);
 
