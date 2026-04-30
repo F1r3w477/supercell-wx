@@ -1640,6 +1640,8 @@ void SettingsDialogImpl::ApplyChanges()
    {
       manager::SettingsManager::Instance().SaveSettings();
    }
+
+   Q_EMIT self_->SettingsApplied();
 }
 
 void SettingsDialogImpl::DiscardChanges()
