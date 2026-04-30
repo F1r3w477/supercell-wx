@@ -28,7 +28,8 @@ set(SRC_QT_CONFIG_TESTS source/scwx/qt/config/county_database.test.cpp
                         source/scwx/qt/config/radar_site.test.cpp)
 set(SRC_QT_MAIN_TESTS source/scwx/qt/main/application_paths.test.cpp
                       source/scwx/qt/main/map_pane_grid_index.test.cpp
-                      source/scwx/qt/main/program_options.test.cpp)
+                      source/scwx/qt/main/program_options.test.cpp
+                      source/scwx/qt/main/theme.test.cpp)
 set(SRC_QT_MANAGER_TESTS source/scwx/qt/manager/settings_manager.test.cpp
                          source/scwx/qt/manager/update_manager.test.cpp)
 set(SRC_QT_MAP_TESTS source/scwx/qt/map/map_link_policy.test.cpp
