@@ -338,21 +338,21 @@ public:
    QLabel* coordinateLabel_ {nullptr};
    QLabel* timeLabel_ {nullptr};
 
-   ui::AlertDockWidget*              alertDockWidget_ {};
-   ui::MapAnnotationDockWidget*      mapAnnotationDock_ {};
-   QAction*                          mapAnnotationOverlayAction_ {};
-   ui::AnimationDockWidget*          animationDockWidget_ {};
-   ui::AboutDialog*                  aboutDialog_ {};
-   ui::ExportSettingsDialog*         exportSettingsDialog_ {};
-   ui::GpsInfoDialog*                gpsInfoDialog_ {};
-   ui::ImGuiDebugDialog*             imGuiDebugDialog_ {};
-   ui::import::ImportSettingsWizard* importSettingsWizard_ {};
-   ui::LayerDialog*                  layerDialog_ {};
-   ui::PlacefileDialog*              placefileDialog_ {};
-   ui::MarkerDialog*                 markerDialog_ {};
-   ui::RadarSiteDialog*              radarSiteDialog_ {};
-   ui::SettingsDialog*               settingsDialog_ {};
-   ui::UpdateDialog*                 updateDialog_ {};
+   ui::AlertDockWidget*                  alertDockWidget_ {};
+   QPointer<ui::MapAnnotationDockWidget> mapAnnotationDock_ {};
+   QAction*                              mapAnnotationOverlayAction_ {};
+   ui::AnimationDockWidget*              animationDockWidget_ {};
+   ui::AboutDialog*                      aboutDialog_ {};
+   ui::ExportSettingsDialog*             exportSettingsDialog_ {};
+   ui::GpsInfoDialog*                    gpsInfoDialog_ {};
+   ui::ImGuiDebugDialog*                 imGuiDebugDialog_ {};
+   ui::import::ImportSettingsWizard*     importSettingsWizard_ {};
+   ui::LayerDialog*                      layerDialog_ {};
+   ui::PlacefileDialog*                  placefileDialog_ {};
+   ui::MarkerDialog*                     markerDialog_ {};
+   ui::RadarSiteDialog*                  radarSiteDialog_ {};
+   ui::SettingsDialog*                   settingsDialog_ {};
+   ui::UpdateDialog*                     updateDialog_ {};
 
    QTimer clockTimer_ {};
 
@@ -467,7 +467,8 @@ MainWindow::MainWindow(QWidget* parent) :
    p->alertDockWidget_ = new ui::AlertDockWidget(this);
    addDockWidget(Qt::BottomDockWidgetArea, p->alertDockWidget_);
 
-   p->mapAnnotationDock_ = new ui::MapAnnotationDockWidget(p->activeMap_);
+   p->mapAnnotationDock_ =
+      new ui::MapAnnotationDockWidget(p->mainWindow_->ui->centralwidget);
    p->mapAnnotationDock_->AttachToMap(p->activeMap_);
    p->mapAnnotationOverlayAction_ = new QAction(tr("&Draw Overlay"), this);
    p->mapAnnotationOverlayAction_->setCheckable(true);
@@ -495,6 +496,23 @@ MainWindow::MainWindow(QWidget* parent) :
          }
          return layers;
       });
+   p->mapAnnotationDock_->SetFloatingDockHostResolver(
+      [impl]() -> QWidget*
+      {
+         if (impl->activeMap_ != nullptr)
+         {
+            return impl->activeMap_;
+         }
+         for (map::MapWidget* mw : impl->maps_)
+         {
+            if (mw != nullptr)
+            {
+               return mw;
+            }
+         }
+         return nullptr;
+      });
+   p->mapAnnotationDock_->ApplyDeferredFloatingState();
    for (map::MapWidget* mw : p->maps_)
    {
       if (mw == nullptr)
@@ -1154,6 +1172,10 @@ void MainWindowImpl::EnsureMapWidgets(int64_t gridWidth, int64_t gridHeight)
          if (lastMap == activeMap_)
          {
             activeMap_ = nullptr;
+         }
+         if (mapAnnotationDock_ != nullptr)
+         {
+            mapAnnotationDock_->DetachIfHostedBy(lastMap);
          }
          // MapWidget not managed by smart ptr; Qt widget lifetime via parent
          // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
@@ -3320,6 +3342,14 @@ void MainWindowImpl::ApplyStoredColorTableThreshold(map::MapWidget* mapWidget)
 
 void MainWindowImpl::SetActiveMap(map::MapWidget* mapWidget)
 {
+   // During pane rebuilds, stale pointers can be observed briefly; only accept
+   // active-map pointers that are still part of the current maps_ container.
+   if (mapWidget != nullptr &&
+       std::find(maps_.cbegin(), maps_.cend(), mapWidget) == maps_.cend())
+   {
+      mapWidget = nullptr;
+   }
+
    if (mapWidget == activeMap_)
    {
       return;
