@@ -338,21 +338,21 @@ public:
    QLabel* coordinateLabel_ {nullptr};
    QLabel* timeLabel_ {nullptr};
 
-   ui::AlertDockWidget*              alertDockWidget_ {};
+   ui::AlertDockWidget*                  alertDockWidget_ {};
    QPointer<ui::MapAnnotationDockWidget> mapAnnotationDock_ {};
-   QAction*                          mapAnnotationOverlayAction_ {};
-   ui::AnimationDockWidget*          animationDockWidget_ {};
-   ui::AboutDialog*                  aboutDialog_ {};
-   ui::ExportSettingsDialog*         exportSettingsDialog_ {};
-   ui::GpsInfoDialog*                gpsInfoDialog_ {};
-   ui::ImGuiDebugDialog*             imGuiDebugDialog_ {};
-   ui::import::ImportSettingsWizard* importSettingsWizard_ {};
-   ui::LayerDialog*                  layerDialog_ {};
-   ui::PlacefileDialog*              placefileDialog_ {};
-   ui::MarkerDialog*                 markerDialog_ {};
-   ui::RadarSiteDialog*              radarSiteDialog_ {};
-   ui::SettingsDialog*               settingsDialog_ {};
-   ui::UpdateDialog*                 updateDialog_ {};
+   QAction*                              mapAnnotationOverlayAction_ {};
+   ui::AnimationDockWidget*              animationDockWidget_ {};
+   ui::AboutDialog*                      aboutDialog_ {};
+   ui::ExportSettingsDialog*             exportSettingsDialog_ {};
+   ui::GpsInfoDialog*                    gpsInfoDialog_ {};
+   ui::ImGuiDebugDialog*                 imGuiDebugDialog_ {};
+   ui::import::ImportSettingsWizard*     importSettingsWizard_ {};
+   ui::LayerDialog*                      layerDialog_ {};
+   ui::PlacefileDialog*                  placefileDialog_ {};
+   ui::MarkerDialog*                     markerDialog_ {};
+   ui::RadarSiteDialog*                  radarSiteDialog_ {};
+   ui::SettingsDialog*                   settingsDialog_ {};
+   ui::UpdateDialog*                     updateDialog_ {};
 
    QTimer clockTimer_ {};
 

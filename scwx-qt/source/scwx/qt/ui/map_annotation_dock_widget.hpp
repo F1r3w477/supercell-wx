@@ -45,14 +45,15 @@ public:
 
    /**
     * Apply persisted pop-out after AttachToMap (LoadState runs in ctor before
-    * host exists; old sessions also used global float coords vs parent-relative).
+    * host exists; old sessions also used global float coords vs
+    * parent-relative).
     */
    void ApplyDeferredFloatingState();
 
    /** Re-run current tool combo + style widgets onto all broadcast targets. */
    void ReapplyToolAndStyleFromUi();
 
-   void               AttachToMap(QWidget* mapWidget);
+   void AttachToMap(QWidget* mapWidget);
    /** If the dock overlay / event filter is tied to |mapWidget|, detach before
     * that widget is destroyed (e.g. grid shrink removes a pane). */
    void               DetachIfHostedBy(QWidget* mapWidget);

@@ -511,7 +511,7 @@ public:
          attachedPosition_.has_value() ? attachedPosition_->y() : -1);
       if (floating_ && self_->parentWidget() != nullptr)
       {
-         const QPoint rel = self_->pos();
+         const QPoint rel     = self_->pos();
          object["floating_x"] = static_cast<std::int64_t>(rel.x());
          object["floating_y"] = static_cast<std::int64_t>(rel.y());
       }
@@ -532,7 +532,7 @@ public:
    void LoadState()
    {
       const PersistedDockState state = LoadDockState();
-      suppressPersist_ = true;
+      suppressPersist_               = true;
 
       strokeWidthM_ =
          std::clamp(state.strokeWidthM, kStrokeWidthMinM, kStrokeWidthMaxM);
@@ -541,10 +541,10 @@ public:
       {
          strokeColor_ = QColor {255, 50, 50, 230};
       }
-      overlayVisible_        = state.overlayVisible;
-      expanded_              = state.expanded;
-      const bool shouldFloat = state.floating;
-      floating_              = false;
+      overlayVisible_         = state.overlayVisible;
+      expanded_               = state.expanded;
+      const bool shouldFloat  = state.floating;
+      floating_               = false;
       pendingRestoreFloating_ = shouldFloat;
       legacyGlobalFloatingPos_ =
          shouldFloat && (state.persistVersion < kMapAnnotationPersistVersion);
@@ -691,7 +691,7 @@ public:
             floatPos = *floatingPosition_;
             if (legacyGlobalFloatingPos_ && ownerWindow != nullptr)
             {
-               floatPos               = ownerWindow->mapFromGlobal(floatPos);
+               floatPos                 = ownerWindow->mapFromGlobal(floatPos);
                legacyGlobalFloatingPos_ = false;
             }
          }
@@ -1014,10 +1014,10 @@ public:
 
    std::function<std::vector<std::shared_ptr<map::MapAnnotationLayer>>()>
                                         getBroadcastLayers_ {};
-   std::function<QWidget*()> floatingDockHostResolver_ {};
-   bool                     suppressPersist_ {false};
-   bool                     pendingRestoreFloating_ {false};
-   bool                     legacyGlobalFloatingPos_ {false};
+   std::function<QWidget*()>            floatingDockHostResolver_ {};
+   bool                                 suppressPersist_ {false};
+   bool                                 pendingRestoreFloating_ {false};
+   bool                                 legacyGlobalFloatingPos_ {false};
    std::vector<QMetaObject::Connection> connections_ {};
    std::string                          lastDistanceUnitsName_ {};
    boost::uuids::uuid                   distanceUnitsCallbackUuid_ {};
@@ -1288,7 +1288,9 @@ void MapAnnotationDockWidget::AttachToMap(QWidget* mapWidget)
    if (thread() != QThread::currentThread())
    {
       QMetaObject::invokeMethod(
-         this, [this, mapWidget]() { AttachToMap(mapWidget); }, Qt::QueuedConnection);
+         this,
+         [this, mapWidget]() { AttachToMap(mapWidget); },
+         Qt::QueuedConnection);
       return;
    }
 
@@ -1545,9 +1547,8 @@ bool MapAnnotationDockWidget::eventFilter(QObject* watched, QEvent* event)
          }
          else if (p->hostMapWidget_ != nullptr)
          {
-            const QPoint newTopLeftGlobal =
-               p->dragStartOverlayGlobal_ + delta;
-            p->attachedPosition_ = ClampOverlayPosition(
+            const QPoint newTopLeftGlobal = p->dragStartOverlayGlobal_ + delta;
+            p->attachedPosition_          = ClampOverlayPosition(
                p->hostMapWidget_,
                this,
                p->hostMapWidget_->mapFromGlobal(newTopLeftGlobal));
