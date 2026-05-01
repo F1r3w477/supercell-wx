@@ -1,6 +1,7 @@
 #include <scwx/common/geographic.hpp>
 #include <scwx/qt/map/map_annotation_layer.hpp>
 #include <scwx/qt/map/map_annotation_types.hpp>
+#include <scwx/qt/map/map_widget.hpp>
 #include <scwx/qt/settings/ui_settings.hpp>
 #include <scwx/qt/settings/unit_settings.hpp>
 #include <scwx/qt/types/unit_types.hpp>
@@ -24,11 +25,13 @@
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPushButton>
+#include <QPointer>
 #include <QSignalBlocker>
 #include <QSlider>
 #include <QStyle>
 #include <QStyleOptionSlider>
 #include <QToolButton>
+#include <QThread>
 #include <QVBoxLayout>
 #include <QWidget>
 
@@ -232,7 +235,11 @@ struct PersistedDockState
    int     attachedY {-1};
    int     floatingX {-1};
    int     floatingY {-1};
+   /** 0/1: legacy; 2+: floating_x/y are parent-relative (Qt::Tool parent). */
+   int persistVersion {0};
 };
+
+constexpr int kMapAnnotationPersistVersion = 2;
 
 PersistedDockState LoadDockState()
 {
@@ -253,6 +260,11 @@ PersistedDockState LoadDockState()
 
    const auto& object = value.as_object();
 
+   if (const auto* v = object.if_contains("persist_version");
+       v != nullptr && v->is_int64())
+   {
+      state.persistVersion = static_cast<int>(v->as_int64());
+   }
    if (const auto* v = object.if_contains("tool_id");
        v != nullptr && v->is_int64())
    {
@@ -448,9 +460,17 @@ public:
          return;
       }
 
-      if (self_->parentWidget() != hostMapWidget_)
+      // Parent to the top-level window, not the map widget, so shrinking the
+      // grid and deleting a MapWidget never destroys this overlay as a child.
+      QWidget* const overlayParent = hostMapWidget_->window();
+      if (overlayParent == nullptr)
       {
-         self_->setParent(hostMapWidget_);
+         return;
+      }
+      if (self_->parentWidget() != overlayParent ||
+          (self_->windowFlags() & Qt::Window) != 0)
+      {
+         self_->setParent(overlayParent, Qt::Widget);
       }
 
       QPoint position = attachedPosition_.value_or(QPoint {
@@ -461,13 +481,17 @@ public:
          attachedPosition_ = position;
       }
 
-      self_->move(position);
+      self_->move(hostMapWidget_->mapTo(overlayParent, position));
       self_->show();
       self_->raise();
    }
 
    void SaveState() const
    {
+      if (suppressPersist_)
+      {
+         return;
+      }
       boost::json::object object;
       object["tool_id"]            = static_cast<std::int64_t>(CurrentTool());
       object["drawings_visible"]   = drawingsVisible_;
@@ -485,10 +509,21 @@ public:
          attachedPosition_.has_value() ? attachedPosition_->x() : -1);
       object["attached_y"] = static_cast<std::int64_t>(
          attachedPosition_.has_value() ? attachedPosition_->y() : -1);
-      object["floating_x"] = static_cast<std::int64_t>(
-         floatingPosition_.has_value() ? floatingPosition_->x() : -1);
-      object["floating_y"] = static_cast<std::int64_t>(
-         floatingPosition_.has_value() ? floatingPosition_->y() : -1);
+      if (floating_ && self_->parentWidget() != nullptr)
+      {
+         const QPoint rel = self_->pos();
+         object["floating_x"] = static_cast<std::int64_t>(rel.x());
+         object["floating_y"] = static_cast<std::int64_t>(rel.y());
+      }
+      else
+      {
+         object["floating_x"] = static_cast<std::int64_t>(
+            floatingPosition_.has_value() ? floatingPosition_->x() : -1);
+         object["floating_y"] = static_cast<std::int64_t>(
+            floatingPosition_.has_value() ? floatingPosition_->y() : -1);
+      }
+      object["persist_version"] =
+         static_cast<std::int64_t>(kMapAnnotationPersistVersion);
       static_cast<void>(
          settings::UiSettings::Instance().map_annotation_state().StageValue(
             boost::json::serialize(object)));
@@ -497,6 +532,7 @@ public:
    void LoadState()
    {
       const PersistedDockState state = LoadDockState();
+      suppressPersist_ = true;
 
       strokeWidthM_ =
          std::clamp(state.strokeWidthM, kStrokeWidthMinM, kStrokeWidthMaxM);
@@ -509,6 +545,9 @@ public:
       expanded_              = state.expanded;
       const bool shouldFloat = state.floating;
       floating_              = false;
+      pendingRestoreFloating_ = shouldFloat;
+      legacyGlobalFloatingPos_ =
+         shouldFloat && (state.persistVersion < kMapAnnotationPersistVersion);
 
       if (state.attachedX >= 0 && state.attachedY >= 0)
       {
@@ -571,15 +610,9 @@ public:
       }
       UpdateFillVisibility();
       UpdateFloatButtonText();
-      if (shouldFloat)
-      {
-         SetFloating(true);
-      }
-      else
-      {
-         SetExpanded(expanded_);
-         SetOverlayVisible(overlayVisible_);
-      }
+      SetExpanded(expanded_);
+      SetOverlayVisible(overlayVisible_);
+      suppressPersist_ = false;
    }
 
    void SetExpanded(bool expanded)
@@ -650,29 +683,62 @@ public:
          self_->setParent(ownerWindow,
                           Qt::Tool | Qt::CustomizeWindowHint |
                              Qt::WindowTitleHint);
-         floating_         = true;
-         expanded_         = true;
-         floatingPosition_ = floatingPosition_.value_or(globalPosition);
-         self_->move(*floatingPosition_);
-         SetExpanded(true);
-         self_->show();
-      }
-      else
-      {
-         const QPoint globalPosition = self_->pos();
-         self_->hide();
-         floating_ = false;
-         if (hostMapWidget_ != nullptr)
+         floating_ = true;
+         expanded_ = true;
+         QPoint floatPos;
+         if (floatingPosition_.has_value())
          {
-            self_->setParent(hostMapWidget_);
-            attachedPosition_ = ClampOverlayPosition(
-               hostMapWidget_,
-               self_,
-               hostMapWidget_->mapFromGlobal(globalPosition));
+            floatPos = *floatingPosition_;
+            if (legacyGlobalFloatingPos_ && ownerWindow != nullptr)
+            {
+               floatPos               = ownerWindow->mapFromGlobal(floatPos);
+               legacyGlobalFloatingPos_ = false;
+            }
+         }
+         else if (ownerWindow != nullptr)
+         {
+            floatPos = ownerWindow->mapFromGlobal(globalPosition);
          }
          else
          {
-            self_->setParent(nullptr);
+            floatPos = globalPosition;
+         }
+         floatingPosition_ = floatPos;
+         self_->move(floatPos);
+         SetExpanded(true);
+         if (overlayVisible_)
+         {
+            self_->show();
+         }
+      }
+      else
+      {
+         const QPoint globalTopLeft = self_->mapToGlobal(QPoint {0, 0});
+         self_->hide();
+         floating_ = false;
+         if (hostMapWidget_ == nullptr && floatingDockHostResolver_)
+         {
+            if (QWidget* const resolved = floatingDockHostResolver_())
+            {
+               self_->AttachToMap(resolved);
+               if (auto* const mw =
+                      qobject_cast<map::MapWidget*>(hostMapWidget_.data()))
+               {
+                  self_->BindToLayer(mw->map_annotation_layer(), false);
+               }
+            }
+         }
+         if (hostMapWidget_ != nullptr)
+         {
+            attachedPosition_ = ClampOverlayPosition(
+               hostMapWidget_,
+               self_,
+               hostMapWidget_->mapFromGlobal(globalTopLeft));
+         }
+         else
+         {
+            QWidget* const owner = self_->parentWidget();
+            self_->setParent(owner != self_ ? owner : nullptr, Qt::Widget);
             attachedPosition_.reset();
          }
          floatingPosition_.reset();
@@ -912,13 +978,14 @@ public:
    }
 
    MapAnnotationDockWidget* self_ {nullptr};
-   QWidget*                 hostMapWidget_ {nullptr};
+   QPointer<QWidget>        hostMapWidget_ {};
    bool                     expanded_ {false};
    bool                     overlayVisible_ {true};
    bool                     floating_ {false};
    bool                     dragging_ {false};
    QPoint                   dragStartGlobal_ {};
    QPoint                   dragStartPosition_ {};
+   QPoint                   dragStartOverlayGlobal_ {};
    std::optional<QPoint>    attachedPosition_ {};
    std::optional<QPoint>    floatingPosition_ {};
 
@@ -947,6 +1014,10 @@ public:
 
    std::function<std::vector<std::shared_ptr<map::MapAnnotationLayer>>()>
                                         getBroadcastLayers_ {};
+   std::function<QWidget*()> floatingDockHostResolver_ {};
+   bool                     suppressPersist_ {false};
+   bool                     pendingRestoreFloating_ {false};
+   bool                     legacyGlobalFloatingPos_ {false};
    std::vector<QMetaObject::Connection> connections_ {};
    std::string                          lastDistanceUnitsName_ {};
    boost::uuids::uuid                   distanceUnitsCallbackUuid_ {};
@@ -1192,23 +1263,68 @@ MapAnnotationDockWidget::MapAnnotationDockWidget(QWidget* parent) :
 
 MapAnnotationDockWidget::~MapAnnotationDockWidget() = default;
 
+void MapAnnotationDockWidget::DetachIfHostedBy(QWidget* mapWidget)
+{
+   if (thread() != QThread::currentThread())
+   {
+      QMetaObject::invokeMethod(
+         this,
+         [this, mapWidget]() { DetachIfHostedBy(mapWidget); },
+         Qt::QueuedConnection);
+      return;
+   }
+
+   if (mapWidget == nullptr || p->hostMapWidget_.data() != mapWidget)
+   {
+      return;
+   }
+
+   BindToLayer(nullptr, false);
+   AttachToMap(nullptr);
+}
+
 void MapAnnotationDockWidget::AttachToMap(QWidget* mapWidget)
 {
+   if (thread() != QThread::currentThread())
+   {
+      QMetaObject::invokeMethod(
+         this, [this, mapWidget]() { AttachToMap(mapWidget); }, Qt::QueuedConnection);
+      return;
+   }
+
    if (p->hostMapWidget_ == mapWidget)
    {
       p->UpdatePlacement();
       return;
    }
 
-   if (p->hostMapWidget_ != nullptr)
+   QWidget* const oldHostMapWidget = p->hostMapWidget_.data();
+   if (oldHostMapWidget != nullptr &&
+       oldHostMapWidget->thread() == QThread::currentThread())
    {
-      p->hostMapWidget_->removeEventFilter(this);
+      oldHostMapWidget->removeEventFilter(this);
    }
 
    p->hostMapWidget_ = mapWidget;
 
    if (mapWidget == nullptr)
    {
+      if (!p->floating_)
+      {
+         QWidget* const win   = window();
+         QWidget* const owner = (win != this) ? win : parentWidget();
+         if (owner != nullptr && owner != this && parentWidget() != owner)
+         {
+            setParent(owner, Qt::Widget);
+         }
+         hide();
+      }
+      return;
+   }
+
+   if (mapWidget->thread() != QThread::currentThread())
+   {
+      p->hostMapWidget_ = nullptr;
       if (!p->floating_)
       {
          hide();
@@ -1253,6 +1369,29 @@ void MapAnnotationDockWidget::SetBroadcastTargets(
       getLayers)
 {
    p->getBroadcastLayers_ = std::move(getLayers);
+}
+
+void MapAnnotationDockWidget::SetFloatingDockHostResolver(
+   std::function<QWidget*()> resolver)
+{
+   p->floatingDockHostResolver_ = std::move(resolver);
+}
+
+void MapAnnotationDockWidget::ApplyDeferredFloatingState()
+{
+   if (!p->pendingRestoreFloating_)
+   {
+      return;
+   }
+   p->pendingRestoreFloating_ = false;
+   if (p->hostMapWidget_ == nullptr)
+   {
+      p->floatingPosition_.reset();
+      p->UpdateFloatButtonText();
+      p->SaveState();
+      return;
+   }
+   p->SetFloating(true);
 }
 
 void MapAnnotationDockWidget::ReapplyToolAndStyleFromUi()
@@ -1361,9 +1500,16 @@ bool MapAnnotationDockWidget::eventFilter(QObject* watched, QEvent* event)
          }
          if (mouseEvent->button() == Qt::LeftButton)
          {
-            p->dragStartGlobal_   = mouseEvent->globalPosition().toPoint();
-            p->dragStartPosition_ = p->floating_ ? pos() : this->pos();
-            p->dragging_          = false;
+            p->dragStartGlobal_ = mouseEvent->globalPosition().toPoint();
+            if (p->floating_)
+            {
+               p->dragStartPosition_ = pos();
+            }
+            else
+            {
+               p->dragStartOverlayGlobal_ = mapToGlobal(QPoint {0, 0});
+            }
+            p->dragging_ = false;
          }
       }
       else if (event->type() == QEvent::MouseMove)
@@ -1399,12 +1545,20 @@ bool MapAnnotationDockWidget::eventFilter(QObject* watched, QEvent* event)
          }
          else if (p->hostMapWidget_ != nullptr)
          {
+            const QPoint newTopLeftGlobal =
+               p->dragStartOverlayGlobal_ + delta;
             p->attachedPosition_ = ClampOverlayPosition(
-               p->hostMapWidget_, this, p->dragStartPosition_ + delta);
+               p->hostMapWidget_,
+               this,
+               p->hostMapWidget_->mapFromGlobal(newTopLeftGlobal));
             const auto attachedPosition = p->attachedPosition_;
             if (attachedPosition.has_value())
             {
-               move(*attachedPosition);
+               QWidget* const op = p->hostMapWidget_->window();
+               if (op != nullptr)
+               {
+                  move(p->hostMapWidget_->mapTo(op, *attachedPosition));
+               }
             }
          }
          return true;
